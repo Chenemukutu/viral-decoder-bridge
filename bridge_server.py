@@ -145,14 +145,20 @@ async def generate_description(request: Request):
         "music or audio, and why this content would be relatable or engaging to a wide audience. "
         "Be specific and descriptive."
     )
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         r = await client.post(
             f"{TL_BASE}/v1.3/generate",
             headers={"x-api-key": tl_key, "Content-Type": "application/json"},
             json={"video_id": video_id, "prompt": prompt},
         )
         result = r.json()
-        return {"description": result.get("data") or result.get("text") or "", "raw": result}
+        # Try all possible field names in the response
+        description = (
+            result.get("data") or result.get("text") or
+            result.get("result") or result.get("content") or
+            result.get("output") or ""
+        )
+        return {"description": description, "raw": result, "status": r.status_code}
 
 if __name__ == "__main__":
     import uvicorn
