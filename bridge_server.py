@@ -47,11 +47,12 @@ async def get_video_info(request: Request):
         raise HTTPException(status_code=400, detail="url is required")
 
     ydl_opts = {
-        "format": "best[ext=mp4][filesize<500M]/best[filesize<500M]/best",
+        # Try formats in order of preference — very permissive to handle all platforms
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/bestvideo+bestaudio/best",
         "quiet": True,
         "no_warnings": True,
-        "extract_flat": False,
         "noplaylist": True,
+        "merge_output_format": "mp4",
     }
 
     try:
@@ -99,10 +100,11 @@ async def upload_to_twelvelabs(request: Request):
 
     # Step 1: Get direct video URL via yt-dlp
     ydl_opts = {
-        "format": "best[ext=mp4][filesize<500M]/best[filesize<500M]/best",
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/bestvideo+bestaudio/best",
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "merge_output_format": "mp4",
     }
 
     try:
@@ -155,11 +157,17 @@ async def download_and_upload(video_url: str, tl_key: str, index_id: str, title:
         out_path = Path(tmpdir) / "video.mp4"
 
         # Download with httpx (direct CDN URL)
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
-            async with client.stream("GET", video_url) as r:
-                with open(out_path, "wb") as f:
-                    async for chunk in r.aiter_bytes(chunk_size=1024 * 1024):
-                        f.write(chunk)
+        # Use yt-dlp to download directly to file (handles all platform URLs)
+        dl_opts = {
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/bestvideo+bestaudio/best",
+            "outtmpl": str(out_path),
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "merge_output_format": "mp4",
+        }
+        with yt_dlp.YoutubeDL(dl_opts) as ydl:
+            ydl.download([video_url])
 
         # Upload to Twelve Labs as file
         async with httpx.AsyncClient(timeout=300.0) as client:
