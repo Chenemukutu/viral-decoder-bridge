@@ -146,19 +146,27 @@ async def generate_description(request: Request):
         "Be specific and descriptive."
     )
     async with httpx.AsyncClient(timeout=120.0) as client:
-        r = await client.post(
-            f"{TL_BASE}/v1.3/generate",
-            headers={"x-api-key": tl_key, "Content-Type": "application/json"},
-            json={"video_id": video_id, "prompt": prompt},
-        )
-        result = r.json()
-        # Try all possible field names in the response
-        description = (
-            result.get("data") or result.get("text") or
-            result.get("result") or result.get("content") or
-            result.get("output") or ""
-        )
-        return {"description": description, "raw": result, "status": r.status_code}
+        # Try both endpoints, disable streaming for regular JSON response
+        payload = {"video_id": video_id, "prompt": prompt, "stream": False}
+        for endpoint in ["/v1.3/generate", "/v1.3/analyze"]:
+            try:
+                r2 = await client.post(
+                    f"{TL_BASE}{endpoint}",
+                    headers={"x-api-key": tl_key, "Content-Type": "application/json"},
+                    json=payload,
+                )
+                print(f"TL {endpoint} status={r2.status_code} body={r2.text[:300]}")
+                if r2.status_code not in (200, 201):
+                    continue
+                result = r2.json()
+                desc = (result.get("data") or result.get("text") or result.get("result")
+                        or result.get("content") or result.get("output") or result.get("answer") or "")
+                if desc:
+                    return {"description": desc, "raw": result, "status": r2.status_code}
+            except Exception as ex:
+                print(f"TL {endpoint} error: {ex}")
+        return {"description": "", "raw": {}, "status": 500}
+        return {"description": "", "raw": {"error": "All generate endpoints failed"}, "status": 500}
 
 if __name__ == "__main__":
     import uvicorn
